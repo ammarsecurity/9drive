@@ -106,7 +106,7 @@ export function QuotaTrackerPage() {
       }
     } catch (e) {
       if (popup) popup.close()
-      console.error('Failed to start Google Drive connection from Quota Tracker', e)
+      setMessage(e instanceof Error ? e.message : 'Failed to start Google Drive connection')
     }
   }
 

@@ -7,7 +7,7 @@ import { requireAuth, type AuthRequest } from '../../middleware/auth.middleware.
 import { hashPassword, verifyPassword } from '../../utils/password.js'
 import { encryptText, hashToken, randomToken } from '../../utils/crypto.js'
 import { signAccessToken } from '../../utils/jwt.js'
-import { createOAuthClient, syncGoogleQuota } from '../google/google.service.js'
+import { createOAuthClient, getActiveGoogleConfig, syncGoogleQuota } from '../google/google.service.js'
 
 export const authRouter = Router()
 
@@ -36,8 +36,11 @@ async function verifyCaptcha(token: string | undefined) {
   if (!token) return false
   const form = new URLSearchParams({ secret: env.RECAPTCHA_SECRET_KEY, response: token })
   const response = await fetch('https://www.google.com/recaptcha/api/siteverify', { method: 'POST', body: form })
-  const data = await response.json() as { success?: boolean }
-  return Boolean(data.success)
+  const data = await response.json() as { success?: boolean; score?: number; action?: string }
+  if (!data.success) return false
+  if (typeof data.score === 'number' && data.score < 0.5) return false
+  if (data.action && data.action !== 'register') return false
+  return true
 }
 
 authRouter.post('/register', async (req, res, next) => {
@@ -68,7 +71,7 @@ authRouter.post('/login', async (req, res, next) => {
 
 authRouter.get('/google/url', async (_req, res, next) => {
   try {
-    const config = await prisma.providerConfig.findFirstOrThrow({ where: { userId: null, provider: 'google_drive', status: 'active' }, orderBy: { createdAt: 'desc' } })
+    const config = await getActiveGoogleConfig()
     const state = randomToken()
     await prisma.oauthState.create({ data: { providerConfigId: config.id, flow: 'login', stateHash: hashToken(state), expiresAt: new Date(Date.now() + 10 * 60_000) } })
     const client = createOAuthClient(config)

@@ -10,6 +10,26 @@ export function createOAuthClient(config: ProviderConfig) {
   return new google.auth.OAuth2(decryptText(config.clientIdEncrypted), decryptText(config.clientSecretEncrypted), config.redirectUri)
 }
 
+export async function getActiveGoogleConfig(providerConfigId?: string, userId?: string) {
+  const config = providerConfigId
+    ? await prisma.providerConfig.findFirst({
+      where: { id: providerConfigId, OR: [{ userId }, { userId: null }], provider: 'google_drive', status: 'active' },
+    })
+    : await prisma.providerConfig.findFirst({
+      where: { userId: null, provider: 'google_drive', status: 'active' },
+      orderBy: { createdAt: 'desc' },
+    })
+  if (!config) {
+    const error = new Error('Google OAuth is not configured. Save a Client ID and Client Secret in Settings first.') as ErrorWithStatus
+    error.status = 400
+    error.code = 'GOOGLE_CONFIG_MISSING'
+    throw error
+  }
+  return config
+}
+
+type ErrorWithStatus = Error & { status?: number; code?: string }
+
 export async function getAuthedGoogleClient(account: ConnectedAccount) {
   if (!account.accessTokenEncrypted || !account.refreshTokenEncrypted || !account.tokenExpiresAt) throw new Error('Google account tokens are missing.')
   if (!account.providerConfigId) throw new Error('Google provider config is missing.')
